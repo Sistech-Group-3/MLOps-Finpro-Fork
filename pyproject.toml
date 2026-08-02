@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mlops"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "folium>=0.20.0",
+    "httpx>=0.28.0",
+    "joblib>=1.4.0",
+    "matplotlib>=3.11.0",
+    "networkx>=3.6.1",
+    "numpy>=2.5.1",
+    "osmnx>=2.1.1",
+    "pandas>=3.0.3",
+    "scikit-learn>=1.9.0",
+    "scipy>=1.18.0",
+    "seaborn>=0.13.2",
+    "uvicorn[standard]>=0.34.0",
+    "xgboost>=2.0.0",
+    "pyarrow",
+    "gdown>=6.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "httpx",
+]
+
+# Enables finding packages like 'modeling' or 'src' in the root directory
+[tool.setuptools.packages.find]
+where = ["."]
+
+# Adds terminal command shortcut: running `start-api` launches your FastAPI app
+[project.scripts]
+start-api = "modeling.api.app:main"
