@@ -40,3 +40,9 @@ where = ["."]
 # Adds terminal command shortcut: running `start-api` launches your FastAPI app
 [project.scripts]
 start-api = "modeling.api.app:main"
+
+# Makes `modeling` importable from `src/` during test collection and runs
+# tests with src layout without installing the package first.
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

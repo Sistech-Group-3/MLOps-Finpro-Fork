@@ -251,7 +251,7 @@ def _score_routes(route_points, df, t_query):
     from src.utils.get_safest_route_v1 import safest_route
     return safest_route(
         routes=route_points, crime_df=df, t_query=t_query,
-        half_life_years=15, bw_space=300, alpha=0.7, beta=0.3, debug=False,
+        bw_space=300, alpha=0.7, beta=0.3, debug=False,
     )
 
 

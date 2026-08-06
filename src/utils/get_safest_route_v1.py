@@ -1,54 +1,53 @@
 """
-Dynamic, non-retrained risk-scoring and route-selection system.
+Route risk-scoring and selection system -- STATIC time, DECAYING space.
 
-Computes crime risk scores for candidate routes dynamically at query time
-using recency-weighted and spatially-weighted crime statistics.  All weights
-are recomputed live — the underlying ML model is never retrained.
+This is the "v1 fixed" variant: temporal contribution is now a plain
+historical aggregation (every record counts equally, regardless of age).
+Spatial contribution still uses a Gaussian distance-decay kernel, exactly
+as before. The underlying ML model is still never retrained.
 
 Formulas
 --------
-1.  w_recency(c, t_query) = exp(-ln(2) * age / half_life)
-purpose: Determines how much a single historical crime record should "count" right now, based purely on how old it is relative to the moment someone is actually requesting a route — not relative to whenever the model happened to be trained.
+1.  K_space(dist_ic)       = exp(-dist_ic^2 / (2 * bw_space^2))
+    purpose: how much a crime record counts based purely on physical
+    distance from the route point being evaluated. Still decaying.
 
-2.  K_space(dist_ic)       = exp(-dist_ic^2 / (2 * bw_space^2))
-purpose: Determines how much a crime record should count based purely on how physically close it is to the point on the route you're evaluating — replacing rigid zone/boundary lookups with smooth distance-based relevance.
+2.  w_c                    = K_space   (no more recency term)
+    purpose: pure spatial relevance weight per record.
 
-3.  w_c(t_query)           = w_recency * K_space
-purpose: Merges "how recent" and "how close" into a single importance score per record, so that a record only strongly influences the result if it satisfies both conditions — recent AND nearby.
-
-4.  freq_hour/month        = recency-weighted crime frequency by hour/month
+3.  freq_hour/month        = plain (unweighted) crime frequency by hour/month
     Temporal_Modifier      = freq_hour * freq_month * freq_weekend  (rescaled -> [0.5, 1.5])
-purpose: Replaces a simple historical count ("how many crimes happened at 9am, ever") with a recency-adjusted proportion ("how many crimes happened at 9am, weighted so recent ones count more"), so the pattern reflects current conditions rather than being diluted equally by decades-old data.
+    purpose: static, all-time historical pattern for this hour/month/
+    weekend bucket -- no age weighting, just aggregation. t_query is still
+    used to pick *which* hour/month/weekend bucket applies, but every
+    historical record contributes equally to that bucket's frequency.
 
-5.  Spatial_Modifier_raw   = sum(severity_c * w_c) / sum(w_c)  (rescaled -> [0.5, 1.5])
-purpose: Computes a localized, personalized crime-severity estimate for a specific route point, built from nearby-and-recent records only, instead of relying on a coarse administrative zone average that ignores exact position and record age.
+4.  Spatial_Modifier_raw   = sum(severity_c * w_c) / sum(w_c)  (rescaled -> [0.5, 1.5])
+    purpose: localized severity estimate at a route point, weighted only
+    by distance (nearby records dominate; far ones fade out; age no
+    longer matters).
 
-6.  R_i(t_query)           = Crime_Score_i x Temporal_Modifier x Spatial_Modifier
-purpose: Combines "how bad the crime type historically was" with "is this a risky time" and "is this a risky place," all multiplied together, into one single risk number for a specific point on the route, at a specific query time.
-
-7.  R_route_mean           = sum(R_i * len_i) / sum(len_i)
+5.  R_i(t_query)           = Crime_Score_i x Temporal_Modifier x Spatial_Modifier
+6.  R_route_mean           = sum(R_i * len_i) / sum(len_i)
     R_route_max            = max(R_i)
-purpose: ollapses many individual point risk scores along an entire route into one or two summary numbers representing the route's overall danger level.    
+7.  Safest_Route           = argmin[alpha * R_mean + beta * R_max]
 
-8.  Safest_Route           = argmin[alpha * R_mean + beta * R_max]
-purpose; Picks the single best (safest) route out of your candidate set, at the current query time, by balancing "overall average danger" against "worst single moment of danger," according to how much you personally care about each.
+(unchanged from before -- only the *inputs* to step 5 changed)
 
 NOTE ON WHY ROUTES CAN LOOK IDENTICAL
 --------------------------------------
-If your candidate routes are geographically close together (sharing the
-same start/end, only diverging by a block or two) AND your crime dataset
-is sparse relative to `bw_space`, the spatial-radius query for every point
-on every route can pull in the SAME set of nearby crime records with
-nearly identical weights. That produces near-identical Spatial_Modifier
-values across routes -- this is expected behavior, not a bug, when routes
-are that close together. Temporal_Modifier is ALWAYS identical across
-routes by design (it depends only on t_query, not on location).
+Same caveat as before, but now purely about space: if candidate routes
+are geographically close together AND the crime dataset is sparse
+relative to `bw_space`, every point on every route can pull in the same
+set of nearby records with nearly identical weights, producing
+near-identical Spatial_Modifier values. Temporal_Modifier is ALWAYS
+identical across routes by design (it depends only on t_query's
+hour/month/weekend bucket, not on location).
 
-If you're seeing identical results with real, well-separated routes and a
-large crime dataset, check:
-  1. That `k` in _query_radius doesn't exceed len(crime_df) (fixed below).
-  2. That your routes list actually contains different lat/lon points
-     (print len(set(...)) per route to confirm they're not duplicates).
+If you're seeing identical results with real, well-separated routes and
+a large crime dataset, check:
+  1. That `k` in _query_radius doesn't exceed len(crime_df).
+  2. That your routes list actually contains different lat/lon points.
   3. That bw_space isn't so large it blurs out all spatial distinction
      (try a smaller bw_space, e.g. 100-150m, for city-block-level routes).
 """
@@ -81,18 +80,13 @@ def _validate(routes, crime_df, t_query):
 
 
 def _clamp_positive(x):
-    	return np.maximum(0.0, x)
+	return np.maximum(0.0, x)
 
 
-# -- 1 & 2. Recency weight & spatial kernel -----------------------------------
-
-def recency_weight(ages_years: np.ndarray, half_life_years: float = 5.0) -> np.ndarray:
-	"""w = exp(-ln(2) * age / half_life)."""
-	return np.exp(-np.log(2.0) * ages_years / half_life_years)
-
+# -- Spatial kernel (still decaying) -------------------------------------------
 
 def spatial_kernel(dist_m: np.ndarray, bw_space: float = 300.0) -> np.ndarray:
-	"""Gaussian spatial kernel: exp(-d^2 / 2bw^2)."""
+	"""Gaussian spatial kernel: exp(-d^2 / 2bw^2). Still distance-decayed."""
 	return np.exp(-(dist_m ** 2) / (2.0 * bw_space ** 2))
 
 
@@ -110,10 +104,8 @@ def _query_radius(tree: BallTree, lat: float, lon: float, radius_m: float, n_tot
 	Uses kNN query with post-filtering because BallTree.query_radius with
 	haversine metric returns incorrect distances when return_distance=True.
 
-	FIX: k must never exceed the number of points actually in the tree,
-	or sklearn will raise (or, in older versions, silently misbehave).
-	This was the most likely cause of identical / degenerate results when
-	testing with small dummy datasets.
+	k must never exceed the number of points actually in the tree, or
+	sklearn will raise (or, in older versions, silently misbehave).
 	"""
 	k = min(200, n_total)
 	d_rad, idx = tree.query(np.radians([[lat, lon]]), k=k)
@@ -137,27 +129,26 @@ def _query_knn_idx(tree: BallTree, lat: float, lon: float, k: int, n_total: int)
 	return idx[0]
 
 
-# -- 4. Temporal modifier -------------------------------------------------------
+# -- 3. Temporal modifier: now STATIC (plain aggregation, no recency decay) ---
 
-def temporal_frequencies(df: pd.DataFrame, t_query: pd.Timestamp,
-						half_life_years: float = 5.0) -> dict:
-	"""Recency-weighted crime frequency by hour, month, and weekend/weekday."""
-	delta_sec = (t_query - df["Date"]).dt.total_seconds().values
-	ages = _clamp_positive(delta_sec / (365.25 * 24 * 3600.0))
-	w = recency_weight(ages, half_life_years)
-	total = w.sum()
+def temporal_frequencies(df: pd.DataFrame) -> dict:
+	"""Plain (unweighted) crime frequency by hour, month, and weekend/weekday.
+
+	Every historical record counts equally regardless of how old it is --
+	this is now a static aggregation, not a recency-weighted one.
+	"""
+	total = len(df)
 	if total <= 0:
-		total = 1.0
+		total = 1
 
 	tmp = df[["Date"]].copy()
-	tmp["w"] = w
 	tmp["h"] = tmp["Date"].dt.hour
 	tmp["m"] = tmp["Date"].dt.month
 	tmp["we"] = tmp["Date"].dt.dayofweek.isin([5, 6]).astype(int)
 
-	f_h = tmp.groupby("h")["w"].sum() / total
-	f_m = tmp.groupby("m")["w"].sum() / total
-	f_we = tmp.groupby("we")["w"].sum() / total
+	f_h = tmp.groupby("h").size() / total
+	f_m = tmp.groupby("m").size() / total
+	f_we = tmp.groupby("we").size() / total
 
 	return {
 		"hour": f_h.to_dict(),
@@ -186,14 +177,17 @@ def _temp_rescale_bounds(freq: dict):
 	return float(np.min(vals)), float(np.max(vals))
 
 
-# -- 5. Spatial modifier ---------------------------------------------------------
+# -- 4. Spatial modifier: still decaying by distance, no time term ------------
 
 def spatial_modifier_raw(tree: BallTree, df: pd.DataFrame,
                           lat: float, lon: float,
-                          t_query: pd.Timestamp,
-                          half_life_years: float = 5.0,
                           bw_space: float = 300.0) -> float:
-	"""Local weighted severity at (lat, lon) -- the raw spatial modifier."""
+	"""Local weighted severity at (lat, lon) -- distance-decay only.
+
+	Time no longer factors into this weight at all: every candidate
+	record within range contributes based purely on how close it is,
+	regardless of when it happened.
+	"""
 	n_total = len(df)
 	idx, dist = _query_radius(tree, lat, lon, 3.0 * bw_space, n_total)
 	if len(idx) == 0:
@@ -201,9 +195,7 @@ def spatial_modifier_raw(tree: BallTree, df: pd.DataFrame,
 		idx, dist = _query_knn(tree, lat, lon, k=k, n_total=n_total)
 
 	sub = df.iloc[idx]
-	delta_sec = (t_query - sub["Date"]).dt.total_seconds().values
-	ages = _clamp_positive(delta_sec / (365.25 * 24 * 3600.0))
-	w = recency_weight(ages, half_life_years) * spatial_kernel(dist, bw_space)
+	w = spatial_kernel(dist, bw_space)
 	tw = w.sum()
 	if tw < 1e-12:
 		return float(sub["Crime_Score"].mean())
@@ -211,16 +203,13 @@ def spatial_modifier_raw(tree: BallTree, df: pd.DataFrame,
 
 
 def _spatial_rescale_bounds(tree: BallTree, df: pd.DataFrame,
-                             t_query: pd.Timestamp,
-                             half_life_years: float = 5.0,
                              bw_space: float = 300.0,
                              n_samples: int = 500):
 	if len(df) == 0:
 		return 0.0, 100.0
 	n = min(n_samples, len(df))
 	pts = df.sample(n=n, random_state=42)[["Latitude", "Longitude"]].values
-	vals = [spatial_modifier_raw(tree, df, p[0], p[1], t_query,
-							half_life_years, bw_space) for p in pts]
+	vals = [spatial_modifier_raw(tree, df, p[0], p[1], bw_space) for p in pts]
 	return float(np.min(vals)), float(np.max(vals))
 
 
@@ -233,7 +222,7 @@ def rescale_05_15(x: float, lo: float, hi: float) -> float:
 	return 0.5 + (x - lo) / (hi - lo)
 
 
-# -- 6. Point risk -------------------------------------------------------------
+# -- 5. Point risk -------------------------------------------------------------
 
 def point_risk(severity: float, temporal_mod: float,
 				spatial_raw: float, spat_lo: float, spat_hi: float) -> float:
@@ -242,7 +231,7 @@ def point_risk(severity: float, temporal_mod: float,
 	return severity * temporal_mod * spat_mod
 
 
-# -- 7. Route aggregation -------------------------------------------------------
+# -- 6. Route aggregation -------------------------------------------------------
 
 def route_scores(risks, lengths):
 	"""Length-weighted mean and max of point risks along a route."""
@@ -253,35 +242,40 @@ def route_scores(risks, lengths):
 	return float(np.average(r, weights=l)), float(np.max(r))
 
 
-# -- 8. Orchestrator -------------------------------------------------------------
+# -- 7. Orchestrator -------------------------------------------------------------
 
 def safest_route(
 	routes: list,
 	crime_df: pd.DataFrame,
 	t_query: pd.Timestamp,
-	half_life_years: float = 15.0,
 	bw_space: float = 300.0,
 	alpha: float = 0.7,
 	beta: float = 0.3,
 	debug: bool = False,
 ) -> dict:
-	"""Select the safest route from candidates at query time."""
+	"""Select the safest route from candidates at query time.
+
+	Temporal_Modifier is a STATIC aggregation: it reflects the all-time
+	historical frequency of crimes for t_query's hour/month/weekend
+	bucket, with no recency weighting -- identical for every route.
+	Spatial_Modifier keeps its distance-decay weighting per route point.
+	"""
 	_validate(routes, crime_df, t_query)
 
 	tree = build_tree(crime_df)
 	n_total = len(crime_df)
 
-	# -- Temporal modifier (identical across all routes, by design) --------
-	freq = temporal_frequencies(crime_df, t_query, half_life_years)
+	# -- Temporal modifier: static, identical across all routes ------------
+	freq = temporal_frequencies(crime_df)
 	t_raw = _temp_modifier_raw(t_query, freq)
 	t_lo, t_hi = _temp_rescale_bounds(freq)
 	t_mod = rescale_05_15(t_raw, t_lo, t_hi)
 
 	if debug:
-		print(f"[debug] Temporal_Modifier = {t_mod:.6f} (same for every route -- expected)")
+		print(f"[debug] Temporal_Modifier = {t_mod:.6f} (static aggregation, same for every route)")
 
-	# -- Spatial rescaling bounds (fit once on historical sample) ----------
-	s_lo, s_hi = _spatial_rescale_bounds(tree, crime_df, t_query, half_life_years, bw_space)
+	# -- Spatial rescaling bounds (fit once, distance-decay only) ----------
+	s_lo, s_hi = _spatial_rescale_bounds(tree, crime_df, bw_space)
 	if debug:
 		print(f"[debug] Spatial rescale bounds: lo={s_lo:.4f} hi={s_hi:.4f}")
 		if np.isclose(s_lo, s_hi):
@@ -293,7 +287,7 @@ def safest_route(
 		risks = []
 		lengths = []
 		for pi, (lat, lon, seg_len) in enumerate(route):
-			sevy = spatial_modifier_raw(tree, crime_df, lat, lon, t_query, half_life_years, bw_space)
+			sevy = spatial_modifier_raw(tree, crime_df, lat, lon, bw_space)
 			nearest_idx = _query_knn_idx(tree, lat, lon, k=1, n_total=n_total)
 			base_severity = float(crime_df.iloc[nearest_idx[0]]["Crime_Score"])
 			r = point_risk(base_severity, t_mod, sevy, s_lo, s_hi)

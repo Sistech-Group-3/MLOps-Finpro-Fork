@@ -2,3 +2,5 @@
 .DS_Store
 *.joblib
 src/artifacts/
+src/dataset/sampled_dataset_engineered.csv
+src/dataset/chicago_risk_pseudo_labels-2.csv

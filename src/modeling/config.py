@@ -104,6 +104,58 @@ LEVEL_BUCKETS = [
     (75.0, 100.0, "Very High"),
 ]
 
+# --------------------------------------------------------------------------- #
+# Continual learning / drift adaptation
+# --------------------------------------------------------------------------- #
+# The continual pipeline writes to its own workspace so the historical
+# production registry / artifacts stay untouched and the experiment is
+# self-contained (models/<name>/<v>/, registry.json, logs).
+CONTINUAL_DIR = ARTIFACT_DIR / "continual"
+CONTINUAL_MODELS_DIR = CONTINUAL_DIR / "models"
+CONTINUAL_REGISTRY = CONTINUAL_DIR / "registry.json"
+EVOLUTION_LOG = CONTINUAL_DIR / "model_evolution.jsonl"
+DRIFT_LOG = CONTINUAL_DIR / "drift_report.jsonl"
+CONTINUAL_SUMMARY = CONTINUAL_DIR / "continual_summary.json"
+
+# Simulator: new data arrives as chronological windows.
+#   * initial window  -> trains the v1 champion
+#   * checkpoint windows -> each simulates a freshly arrived batch
+INITIAL_WINDOW_DAYS = 3600      # ~ first 10 years -> seed the champion
+CHECKPOINT_WINDOW_DAYS = 1400   # ~ 3.8 years per arriving batch
+
+# Chronological split inside every retraining round (tuning vs. training).
+CONTINUAL_VAL_FRACTION = 0.20
+
+# Drift detection thresholds (PSI on features/target, KS on target, and the
+# champion's prediction-error ratio on the fresh window).
+PSI_WARN = 0.10     # feature PSI above this -> flagged
+PSI_HIGH = 0.25     # feature PSI above this -> strong / high-severity signal
+KS_ALPHA = 0.01     # KS p-value below this -> distributions differ
+ERROR_DRIFT_WARN = 1.10   # fresh-window MAE / training MAE above this -> warn
+ERROR_DRIFT_HIGH = 1.20   # above this -> high severity
+
+# Features that are deterministic functions of the calendar (linear time) are
+# *excluded* from feature-PSI: they drift simply because time advances, not
+# because the underlying pattern changed. PSI therefore runs on the stationary
+# signal (cyclic temporal + spatial + trailing risk aggregates).
+DRIFT_IGNORE_FEATURES = ["year", "days_since_start"]
+
+# Static per-cluster neighbourhood features are computed once on the initial
+# window (the deployment-time environment) and frozen for later windows, so the
+# trailing risk_* aggregates remain the genuine change signal.
+STATIC_FEATURES = ["near_count", "near_mean_sev", "near_max_sev"]
+
+# Update policy / quality gate. A candidate is *promoted* only when it beats the
+# reigning champion on the fresh holdout window by at least
+# MIN_PROMOTION_IMPROVEMENT relative MAE *and* does not regress RMSE beyond
+# MAX_REGRESSION_RMSE. Otherwise the champion stays and the candidate is logged.
+MIN_PROMOTION_IMPROVEMENT = 0.005   # 0.5% relative MAE gain
+MAX_REGRESSION_RMSE = 0.01          # allow up to 1% RMSE regression on promotion
+FORCE_RETRAIN_EVERY = 3             # checkpoint cadence for scheduled refreshes
+
+# Default learner used by the continual pipeline (keeps the demo tractable).
+CONTINUAL_MODEL = "XGBRegressor"
+
 def level_for(score: float) -> str:
     """Map a numeric 0-100 risk score to a categorical safety level."""
     for lo, hi, label in LEVEL_BUCKETS:
@@ -123,7 +175,7 @@ if os.getenv("RISK_ARTIFACT_DIR"):
 
 
 def ensure_dirs() -> None:
-    for d in (MODELS_DIR, LOG_DIR, REPORT_DIR, METRICS_DIR):
+    for d in (MODELS_DIR, LOG_DIR, REPORT_DIR, METRICS_DIR, CONTINUAL_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
 
