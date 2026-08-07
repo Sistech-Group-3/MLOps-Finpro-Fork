@@ -1,6 +1,3 @@
-def main():
-    print("Hello from mlops!")
+from src.modeling.api.app import app
 
-
-if __name__ == "__main__":
-    main()
+__all__ = ["app"]
