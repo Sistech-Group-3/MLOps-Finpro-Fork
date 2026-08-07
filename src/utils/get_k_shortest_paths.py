@@ -2,7 +2,7 @@ import osmnx as ox
 import networkx as nx
 from itertools import islice
 
-def get_k_shortest_paths(G: nx.digraph, lat1, lon1, lat2, lon2, k=3, weight="length"):
+def get_k_shortest_paths(G: nx.digraph, lat1, lon1, lat2, lon2, k=3, weight="length", snap=None):
 	"""
 	Find the k shortest simple paths between two lat/lon points on graph G,
 	ranked from shortest to longest by total edge weight.
@@ -13,6 +13,9 @@ def get_k_shortest_paths(G: nx.digraph, lat1, lon1, lat2, lon2, k=3, weight="len
 		lat2, lon2 : coordinates of end point
 		k      : number of shortest paths to return
 		weight : edge attribute to optimize on (e.g. "length" or "travel_time")
+		snap   : optional callable snap(lat, lon) -> node id. When provided it
+		         is used to map coordinates to graph nodes, avoiding the
+		         repeated spatial-index build inside osmnx.nearest_nodes.
 
 	Returns:
 		List of dicts, each with:
@@ -22,8 +25,12 @@ def get_k_shortest_paths(G: nx.digraph, lat1, lon1, lat2, lon2, k=3, weight="len
 		Ordered from lowest cost to highest.
 	"""
 	# Snap input coordinates to nearest graph nodes (OSMnx uses x=lon, y=lat)
-	orig_node = ox.distance.nearest_nodes(G, X=lon1, Y=lat1)
-	dest_node = ox.distance.nearest_nodes(G, X=lon2, Y=lat2)
+	if snap is not None:
+		orig_node = snap(lat1, lon1)
+		dest_node = snap(lat2, lon2)
+	else:
+		orig_node = ox.distance.nearest_nodes(G, X=lon1, Y=lat1)
+		dest_node = ox.distance.nearest_nodes(G, X=lon2, Y=lat2)
 
 	paths = []
 	try:

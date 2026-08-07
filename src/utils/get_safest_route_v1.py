@@ -202,6 +202,19 @@ def spatial_modifier_raw(tree: BallTree, df: pd.DataFrame,
 	return float(np.average(sub["Crime_Score"].values, weights=w))
 
 
+def precompute(crime_df: pd.DataFrame, bw_space: float = 300.0):
+    """Precompute everything that is route-independent, once.
+
+    Returns (tree, freq, spatial_bounds) so a serving layer can build them a
+    single time and reuse them across requests instead of rebuilding the
+    BallTree / temporal aggregation / spatial rescale bounds per call.
+    """
+    tree = build_tree(crime_df)
+    freq = temporal_frequencies(crime_df)
+    s_lo, s_hi = _spatial_rescale_bounds(tree, crime_df, bw_space)
+    return tree, freq, (s_lo, s_hi)
+
+
 def _spatial_rescale_bounds(tree: BallTree, df: pd.DataFrame,
                              bw_space: float = 300.0,
                              n_samples: int = 500):
@@ -252,6 +265,9 @@ def safest_route(
 	alpha: float = 0.7,
 	beta: float = 0.3,
 	debug: bool = False,
+	tree: BallTree = None,
+	freq: dict = None,
+	spatial_bounds: tuple = None,
 ) -> dict:
 	"""Select the safest route from candidates at query time.
 
@@ -259,14 +275,19 @@ def safest_route(
 	historical frequency of crimes for t_query's hour/month/weekend
 	bucket, with no recency weighting -- identical for every route.
 	Spatial_Modifier keeps its distance-decay weighting per route point.
+
+	Optional precomputed `tree` / `freq` / `spatial_bounds` (see precompute)
+	avoid rebuilding route-independent state on every call; when omitted
+	they are computed from crime_df as before.
 	"""
 	_validate(routes, crime_df, t_query)
 
-	tree = build_tree(crime_df)
+	if tree is None or freq is None or spatial_bounds is None:
+		tree, freq, spatial_bounds = precompute(crime_df, bw_space)
+	s_lo, s_hi = spatial_bounds
 	n_total = len(crime_df)
 
 	# -- Temporal modifier: static, identical across all routes ------------
-	freq = temporal_frequencies(crime_df)
 	t_raw = _temp_modifier_raw(t_query, freq)
 	t_lo, t_hi = _temp_rescale_bounds(freq)
 	t_mod = rescale_05_15(t_raw, t_lo, t_hi)
@@ -274,8 +295,6 @@ def safest_route(
 	if debug:
 		print(f"[debug] Temporal_Modifier = {t_mod:.6f} (static aggregation, same for every route)")
 
-	# -- Spatial rescaling bounds (fit once, distance-decay only) ----------
-	s_lo, s_hi = _spatial_rescale_bounds(tree, crime_df, bw_space)
 	if debug:
 		print(f"[debug] Spatial rescale bounds: lo={s_lo:.4f} hi={s_hi:.4f}")
 		if np.isclose(s_lo, s_hi):

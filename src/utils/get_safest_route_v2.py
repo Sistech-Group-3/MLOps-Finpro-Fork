@@ -56,6 +56,7 @@ def generate_diverse_routes(
     n_routes: int = 20,
     penalty_factor: float = 1.7,
     weight: str = "length",
+    snap: Optional[callable] = None,
 ) -> List[Dict[str, Any]]:
     """
     Generate a diverse set of candidate routes between two points using
@@ -75,6 +76,8 @@ def generate_diverse_routes(
         used by a previously found route (>1.0; higher = more aggressive
         avoidance of previously-used streets)
     weight : edge attribute to route on (e.g. "length" or "travel_time")
+    snap   : optional callable snap(lat, lon) -> node id, to avoid the
+        repeated spatial-index build inside osmnx.nearest_nodes.
 
     Returns
     -------
@@ -83,8 +86,12 @@ def generate_diverse_routes(
     get fewer than n_routes if the network doesn't support that many
     genuinely distinct paths.
     """
-    orig = ox.distance.nearest_nodes(G, X=lon1, Y=lat1)
-    dest = ox.distance.nearest_nodes(G, X=lon2, Y=lat2)
+    if snap is not None:
+        orig = snap(lat1, lon1)
+        dest = snap(lat2, lon2)
+    else:
+        orig = ox.distance.nearest_nodes(G, X=lon1, Y=lat1)
+        dest = ox.distance.nearest_nodes(G, X=lon2, Y=lat2)
 
     # Working copy — we mutate edge weights here, never on the original graph
     G_work = copy.deepcopy(G)

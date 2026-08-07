@@ -51,7 +51,7 @@ def _deploy_model(registry: dict, model, model_name: str, meta: dict) -> str:
     d = C.CONTINUAL_MODELS_DIR / model_name / version
     d.mkdir(parents=True, exist_ok=True)
     if model_name == "XGBRegressor":
-        p = d / "model.xgb"
+        p = d / "model.ubj"
         model.save_model(str(p))
     else:
         p = d / "model.joblib"

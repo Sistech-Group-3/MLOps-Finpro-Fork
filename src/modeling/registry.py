@@ -60,7 +60,7 @@ def save_model_artifact(model, model_name: str, version: str):
 def save_xgboost(booster, model_name: str, version: str):
     """Persist an XGBoost booster with its native serialiser (non-pickle)."""
     d = version_dir(model_name, version)
-    p = d / "model.xgb"
+    p = d / "model.ubj"
     booster.save_model(str(p))
     return str(p)
 
@@ -86,10 +86,10 @@ def register_version(registry: dict, model_name: str, version: str,
 def load_model_artifact(model_name: str, version: str):
     """Load and return the model object for a given name/version."""
     d = C.MODELS_DIR / model_name / version
-    if (d / "model.xgb").exists():
+    if (d / "model.ubj").exists():
         import xgboost as xgb
         booster = xgb.Booster()
-        booster.load_model(str(d / "model.xgb"))
+        booster.load_model(str(d / "model.ubj"))
         return booster
     return joblib.load(d / "model.joblib")
 
