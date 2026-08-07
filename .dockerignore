@@ -1,0 +1,33 @@
+# --- Python bytecode ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyc
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+
+# --- Test artifacts ---
+.pytest_cache/
+tests/
+
+# --- Git metadata ---
+.git/
+.gitignore
+
+# --- Dev tooling ---
+*.md
+.DS_Store
+
+# --- Notebooks (not needed at runtime) ---
+src/notebooks/
+
+# --- Large transient artifacts (logs, continual runs) ---
+src/artifacts/logs/
+src/artifacts/continual/
+src/artifacts/metrics/
+
+# --- Unused dataset variants (CSV duplicates of parquet) ---
+src/dataset/*.csv

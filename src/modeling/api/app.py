@@ -99,7 +99,16 @@ def _require_crime_df(request: Request):
 
 @app.get("/health", response_model=HealthResponse)
 def health(request: Request):
-    service = _require_service(request)
+    """Health check — always returns HTTP 200.
+
+    Returns ``status='ok'`` when models are loaded, ``status='degraded'``
+    when the service failed to initialise (models not yet trained / missing).
+    Railway uses this endpoint to decide whether to route traffic; returning
+    200 even in degraded mode prevents a boot-loop caused by 503 responses.
+    """
+    service = request.app.state.service
+    if service is None:
+        return HealthResponse(status="degraded", models_loaded=0, active={})
     return HealthResponse(
         status="ok",
         models_loaded=len(service.models),
@@ -306,3 +315,11 @@ def _parse_datetime(s: str) -> pd.Timestamp:
 def _today() -> str:
     import datetime
     return datetime.date.today().isoformat()
+
+
+def main():
+    """Entry point for ``start-api`` console script and local dev."""
+    import os
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("src.modeling.api.app:app", host="0.0.0.0", port=port, workers=1)

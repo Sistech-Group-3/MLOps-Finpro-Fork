@@ -1,6 +1,11 @@
 .venv
 .DS_Store
 *.joblib
-src/artifacts/
+# Exclude transient / large generated outputs — not model weights
+src/artifacts/logs/
+src/artifacts/continual/
+src/artifacts/metrics/
 src/dataset/sampled_dataset_engineered.csv
 src/dataset/chicago_risk_pseudo_labels-2.csv
+# Allow: src/artifacts/models/, src/artifacts/serving_assets.json, src/artifacts/registry.json
+# Allow: src/artifacts/ (so trained models and registry get committed)

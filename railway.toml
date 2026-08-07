@@ -1,0 +1,10 @@
+[build]
+builder = "dockerfile"
+
+[deploy]
+# Railway hits this path to confirm the app is alive
+healthcheckPath = "/health"
+# Give the app 120s to start (heavy imports: osmnx, xgboost, scikit-learn)
+healthcheckTimeout = 120
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
