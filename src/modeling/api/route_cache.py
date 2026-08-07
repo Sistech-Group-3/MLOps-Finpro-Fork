@@ -20,7 +20,6 @@ import threading
 
 import numpy as np
 import pandas as pd
-from sklearn.neighbors import BallTree
 
 from .. import config as C
 from src.utils.get_safest_route_v1 import precompute
@@ -131,6 +130,7 @@ class RouteCache:
         Same metric/coordinates as ``osmnx.distance.nearest_nodes``, so snaps
         are identical, but the index is built once instead of every request.
         """
+        from sklearn.neighbors import BallTree
         node_ids = list(graph.nodes)
         coords = np.radians(
             [[graph.nodes[n]["y"], graph.nodes[n]["x"]] for n in node_ids]

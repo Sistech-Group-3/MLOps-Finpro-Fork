@@ -54,7 +54,6 @@ a large crime dataset, check:
 
 import numpy as np
 import pandas as pd
-from sklearn.neighbors import BallTree
 from typing import Any
 
 _EARTH_RADIUS_M = 6_371_000.0
@@ -215,7 +214,7 @@ def precompute(crime_df: pd.DataFrame, bw_space: float = 300.0):
     return tree, freq, (s_lo, s_hi)
 
 
-def _spatial_rescale_bounds(tree: BallTree, df: pd.DataFrame,
+def _spatial_rescale_bounds(tree: Any, df: pd.DataFrame,
                              bw_space: float = 300.0,
                              n_samples: int = 500):
 	if len(df) == 0:
@@ -265,7 +264,7 @@ def safest_route(
 	alpha: float = 0.7,
 	beta: float = 0.3,
 	debug: bool = False,
-	tree: BallTree = None,
+	tree: Any = None,
 	freq: dict = None,
 	spatial_bounds: tuple = None,
 ) -> dict:
