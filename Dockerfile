@@ -28,20 +28,18 @@ RUN uv pip install --system --no-cache \
     xgboost \
     joblib \
     httpx \
-    pyarrow \
-    osmnx \
-    networkx \
-    folium \
-    matplotlib \
-    seaborn \
-    scipy \
-    gdown
+    pyarrow
 
 # --- Application source + all bundled artifacts ---
 COPY . .
 
 # Railway automatically sets $PORT; fall back to 8000 for local Docker testing
 ENV PORT=8000
+
+# Memory Optimizations for Free Tier (500MB RAM limit)
+ENV MALLOC_ARENA_MAX=2
+ENV PYTHONUNBUFFERED=1
+ENV WEB_CONCURRENCY=1
 
 # Expose the port (informational only — Railway reads $PORT from env)
 EXPOSE $PORT
