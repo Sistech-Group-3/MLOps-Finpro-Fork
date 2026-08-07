@@ -19,27 +19,27 @@ ROUTE_BW_SPACE = 50.0
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Executes on server startup BEFORE listening for HTTP requests."""
-    # 1. Initialize prediction services
     try:
         app.state.service = RiskService()
-    except Exception as exc:  # assets not trained yet
+    except Exception as exc:
         app.state.service = None
         print(f"[startup] service unavailable: {exc}")
 
     app.state.store = PredictionLogStore()
 
-    # 2. Load G & crime data into app.state before accepting requests
-    route_cache = RouteCache(bw_space=ROUTE_BW_SPACE)
-    route_cache.load()
-
-    app.state.route_cache = route_cache
-    app.state.graph = route_cache.graph if route_cache.loaded else None
-    app.state.df = route_cache.df if route_cache.loaded else None
+    try:
+        route_cache = RouteCache(bw_space=ROUTE_BW_SPACE)
+        route_cache.load()
+        app.state.route_cache = route_cache
+        app.state.graph = route_cache.graph if route_cache.loaded else None
+        app.state.df = route_cache.df if route_cache.loaded else None
+    except Exception as exc:
+        print(f"[startup] route_cache unavailable: {exc}")
+        app.state.route_cache = None
+        app.state.graph = None
+        app.state.df = None
 
     yield
-
-    # (optional) teardown / cleanup goes here
 
 
 app = FastAPI(
