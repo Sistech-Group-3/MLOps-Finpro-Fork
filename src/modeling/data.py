@@ -17,7 +17,11 @@ def load_events() -> pd.DataFrame:
     ev = pd.read_parquet(C.EVENTS_FILE)
     ev["Parsed_Date"] = pd.to_datetime(ev["Parsed_Date"], errors="coerce")
     keep = ["Parsed_Date", "Latitude", "Longitude", "Severity_Score"]
-    return ev[keep].dropna().reset_index(drop=True)
+    df = ev[keep].dropna().reset_index(drop=True)
+    df["Latitude"] = df["Latitude"].astype("float32")
+    df["Longitude"] = df["Longitude"].astype("float32")
+    df["Severity_Score"] = df["Severity_Score"].astype("float32")
+    return df
 
 
 # Distance
